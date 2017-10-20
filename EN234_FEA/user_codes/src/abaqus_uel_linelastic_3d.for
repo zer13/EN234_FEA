@@ -13,7 +13,7 @@
 !
 !=========================== ABAQUS format user element subroutine ===================
 
-      SUBROUTINE UEL(RHS,AMATRX,SVARS,ENERGY,NDOFEL,NRHS,NSVARS,
+      SUBROUTINE UEL_3D(RHS,AMATRX,SVARS,ENERGY,NDOFEL,NRHS,NSVARS,
      1     PROPS,NPROPS,COORDS,MCRD,NNODE,U,DU,V,A,JTYPE,TIME,DTIME,
      2     KSTEP,KINC,JELEM,PARAMS,NDLOAD,JDLTYP,ADLMAG,PREDEF,NPREDF,
      3     LFLAGS,MLVARX,DDLMAG,MDLOAD,PNEWDT,JPROPS,NJPROP,PERIOD)
@@ -213,7 +213,7 @@
             face_coords(1:3,i) = coords(1:3,face_node_list(i))
         end do
 
-        if (nfacenodes == 3) n_points = 3
+        if (nfacenodes == 3) n_points = 3           ! Excuse me???
         if (nfacenodes == 6) n_points = 4
         if (nfacenodes == 4) n_points = 4
         if (nfacenodes == 8) n_points = 9
@@ -239,7 +239,7 @@
 
       return
 
-      END SUBROUTINE UEL
+      END SUBROUTINE UEL_3D
 
 
       subroutine abq_UEL_3D_integrationpoints(n_points, n_nodes, xi, w)
