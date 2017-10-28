@@ -47,14 +47,14 @@
 !         This array is passed in as the stress tensor at the beginning
 !         of the increment and must be updated in this routine to be the
 !         stress tensor at the end of the increment. If you specified
-!         initial stresses (“Initial conditions,” Section 19.2.1), this
+!         initial stresses (Initial conditions, Section 19.2.1), this
 !         array will contain the initial stresses at the start of the
 !         analysis. The size of this array depends on the value of NTENS
 !         as defined below. In finite-strain problems the stress tensor
 !         has already been rotated to account for rigid body motion in
 !         the increment before UMAT is called, so that only the corotational
 !         part of the stress integration should be done in UMAT. The
-!         measure of stress used is “true” (Cauchy) stress.
+!         measure of stress used is true (Cauchy) stress.
 !
 !   NB      When used in ABAQUS with hybrid elements the stress array has different dimensions
 !           and additional variables must be defined.   See the ABAQUS manual for details.
@@ -64,11 +64,11 @@
 !         An array containing the solution-dependent state variables.
 !         These are passed in as the values at the beginning of the
 !         increment unless they are updated in user subroutines USDFLD
-!        (“USDFLD,” Section 25.2.39) or UEXPAN (“UEXPAN,” Section 25.2.20),
+!        (SDFLD,Section 25.2.39) or UEXPAN (EXPAN,Section 25.2.20),
 !        in which case the updated values are passed in. In all cases
 !         STATEV must be returned as the values at the end of the increment.
 !         The size of the array is defined as described in
-!        “Allocating space” in “User subroutines: overview,” Section 25.1.1.
+!        allocating space in user subroutines: overview,Section 25.1.1.
 !
 !         In finite-strain problems any vector-valued or tensor-valued
 !         state variables must be rotated to account for rigid body
@@ -78,7 +78,7 @@
 !
 !      SSE, SPD, SCD
 !         Specific elastic strain energy, plastic dissipation, and
-!         “creep” dissipation, respectively. These are passed in as
+!         creep dissipation, respectively. These are passed in as
 !         the values at the start of the increment and should be
 !         updated to the corresponding specific energy values at
 !         the end of the increment. They have no effect on the solution,
@@ -107,19 +107,19 @@
 !        algorithms in ABAQUS/Standard (if automatic time incrementation is chosen).
 !        For a quasi-static procedure the automatic time stepping that ABAQUS/Standard
 !        uses, which is based on techniques for integrating standard creep laws
-!        (see “Quasi-static analysis,” Section 6.2.5), cannot be controlled from within
+!        (see “Quasi-static analysis,Section 6.2.5), cannot be controlled from within
 !        the UMAT subroutine.
 !        PNEWDT is set to a large value before each call to UMAT.
 !        If PNEWDT is redefined to be less than 1.0, ABAQUS/Standard must abandon the
 !        time increment and attempt it again with a smaller time increment. The
 !        suggested new time increment provided to the automatic time integration
-!        algorithms is PNEWDT × DTIME, where the PNEWDT used is the minimum value
+!        algorithms is PNEWDT  DTIME, where the PNEWDT used is the minimum value
 !        for all calls to user subroutines that allow redefinition of PNEWDT for this
 !        iteration.
 !        If PNEWDT is given a value that is greater than 1.0 for all calls to user
 !        subroutines for this iteration and the increment converges in this iteration,
 !        ABAQUS/Standard may increase the time increment. The suggested new time increment
-!        provided to the automatic time integration algorithms is PNEWDT × DTIME, where
+!        provided to the automatic time integration algorithms is PNEWDT  DTIME, where
 !        the PNEWDT used is the minimum value for all calls to user subroutines for
 !        this iteration.
 !        If automatic time incrementation is not selected in the analysis procedure,
@@ -134,7 +134,7 @@
 !         strains passed into UMAT are the mechanical strains only (that is, the
 !         thermal strains computed based upon the thermal expansion coefficient have
 !         been subtracted from the total strains). These strains are available for output
-!         as the “elastic” strains.
+!         as the elastic strains.
 !
 !         In finite-strain problems the strain components have been rotated to account for
 !         rigid body motion in the increment before UMAT is called and are approximations
@@ -168,7 +168,7 @@
 !        Array of increments of predefined field variables.
 !
 !      CMNAME
-!        User-defined material name, left justified. Some internal material models are given names starting with the “ABQ_” character string. To avoid conflict, you should not use “ABQ_” as the leading string for CMNAME.
+!        User-defined material name, left justified. Some internal material models are given names starting with the BQ character string. To avoid conflict, you should not use BQ as the leading string for CMNAME.
 !
 !      NDI
 !        Number of direct stress components at this point.
@@ -181,8 +181,8 @@
 !
 !      NSTATV
 !         Number of solution-dependent state variables that are associated with
-!         this material type (defined as described in “Allocating space” in “User
-!         subroutines: overview,” Section 25.1.1).
+!         this material type (defined as described in allocating space in user
+!         subroutines: overview,Section 25.1.1).
 !
 !      PROPS(NPROPS)
 !         User-specified array of material constants associated with this user material.
@@ -193,7 +193,7 @@
 !      COORDS
 !         An array containing the coordinates of this point. These are the current
 !         coordinates if geometric nonlinearity is accounted for during the step
-!         (see “Procedures: overview,” Section 6.1.1); otherwise, the array contains
+!         (see procedures: overview, Section 6.1.1); otherwise, the array contains
 !         the original coordinates of the point.
 !
 !     DROT(3,3)
@@ -251,60 +251,74 @@
 !
 !     Local variables
 
-      double precision E,xnu
+      double precision G,xnu,e0,pt,kb,kp,ekk
       integer i,j
 
-      ddsdde = 0.d0
+      ddsdde(1:6,1:6) = 0.d0
 
-      E = props(1)
-      xnu = props(2)
+      !E = props(1)
+      !xnu = props(2)
+      G =props(1)
+      xnu=props(2)
+      e0=props(3)
+      pt=props(4)
 
 !    for debugging, you can use
 !      write(6,*) ' Hello '
 !    Output is then written to the .dat file
 
-      If (ndi==3 .and. nshr==1) then    ! Plane strain or axisymmetry
-         ddsdde(1,1) = 1.d0-xnu
-         ddsdde(1,2) = xnu
-         ddsdde(1,3) = xnu
-         ddsdde(2,1) = xnu
-         ddsdde(2,2) = 1.d0-xnu
-         ddsdde(2,3) = xnu
-         ddsdde(3,1) = xnu
-         ddsdde(3,2) = xnu
-         ddsdde(3,3) = 1.d0-xnu
-         ddsdde(4,4) = 0.5d0*(1.d0-2.d0*xnu)
-         ddsdde = ddsdde*E/( (1.d0+xnu)*(1.d0-2.d0*xnu) )
-      else if (ndi==2 .and. nshr==1) then   ! Plane stress
-         ddsdde(1,1) = 1.d0
-         ddsdde(1,2) = xnu
-         ddsdde(2,1) = xnu
-         ddsdde(2,2) = 1.d0
-         ddsdde(3,3) = 0.5d0*(1.d0-xnu)
-         ddsdde = ddsdde*E/( (1.d0+xnu*xnu) )
-      else ! 3D
-         ddsdde(1,1) = 1.d0-xnu
-         ddsdde(1,2) = xnu
-         ddsdde(1,3) = xnu
-         ddsdde(2,1) = xnu
-         ddsdde(2,2) = 1.d0-xnu
-         ddsdde(2,3) = xnu
-         ddsdde(3,1) = xnu
-         ddsdde(3,2) = xnu
-         ddsdde(3,3) = 1.d0-xnu
-         ddsdde(4,4) = 0.5d0*(1.d0-2.d0*xnu)
-         ddsdde(5,5) = ddsdde(4,4)
-         ddsdde(6,6) = ddsdde(4,4)
-         ddsdde = ddsdde*E/( (1.d0+xnu)*(1.d0-2.d0*xnu) )
-      endif
+      !ddsdde(dstran)
+
+      kp=pt*(1-2*xnu)/(1+xnu)*(1+e0)
+
+      stran(1:6)=stran(1:6)+dstran(1:6)
+
+      ekk=0.d0
+      do i=1,3
+         ekk=ekk+stran(i)
+      end do
+
+      kb=((pt/3)*(1.d0+e0)/kp)*exp(-(1.d0+e0)*ekk/kp)-2.d0*G/3
+      ddsdde(1,1) = 2*G+kb
+      ddsdde(1,2) = kb
+      ddsdde(1,3) = kb
+      ddsdde(2,1) = kb
+      ddsdde(2,2) = 2*G+kb
+      ddsdde(2,3) = kb
+      ddsdde(3,1) = kb
+      ddsdde(3,2) = kb
+      ddsdde(3,3) = 2*G+kb
+      ddsdde(4,4) = G
+      ddsdde(5,5) = G
+      ddsdde(6,6) = G
+
+
 !
 !     NOTE: ABAQUS uses engineering shear strains,
 !     i.e. stran(ndi+1) = 2*e_12, etc...
-      do i = 1,ntens
-      do j = 1,ntens
-         stress(i) = stress(i) + ddsdde(i,j)*dstran(j)
-      end do
-      end do
+      !do i = 1,ntens
+      !do j = 1,ntens
+      !   stress(i) = stress(i) + ddsdde(i,j)*dstran(j)
+      !end do
+      !end do
+
+      !stress(1)=stress(1)+
+     1!    2*G*(dstran(1)-ekk/3)+pt/3*(1-exp(-ekk*(1+e0)/kp))
+      !stress(2)=stress(2)+
+     1!    2*G*(dstran(2)-ekk/3)+pt/3*(1-exp(-ekk*(1+e0)/kp))
+      !stress(3)=stress(3)+
+     1!    2*G*(dstran(3)-ekk/3)+pt/3*(1-exp(-ekk*(1+e0)/kp))
+
+      stress(1)=2*G*(stran(1)-ekk/3)+pt/3*(1-exp(-ekk*(1+e0)/kp))
+      stress(2)=2*G*(stran(2)-ekk/3)+pt/3*(1-exp(-ekk*(1+e0)/kp))
+      stress(3)=2*G*(stran(3)-ekk/3)+pt/3*(1-exp(-ekk*(1+e0)/kp))
+
+      !stress(4)=stress(4)+2*G*dstran(4)
+      !stress(5)=stress(5)+2*G*dstran(5)
+      !stress(6)=stress(6)+2*G*dstran(6)
+      stress(4)=G*stran(4)
+      stress(5)=G*stran(5)
+      stress(6)=G*stran(6)
 
       RETURN
       END subroutine UMAT

@@ -13,7 +13,7 @@
 !
 !=========================== ABAQUS format user element subroutine ===================
 
-      SUBROUTINE UEL_3D(RHS,AMATRX,SVARS,ENERGY,NDOFEL,NRHS,NSVARS,
+      SUBROUTINE UEL(RHS,AMATRX,SVARS,ENERGY,NDOFEL,NRHS,NSVARS,
      1     PROPS,NPROPS,COORDS,MCRD,NNODE,U,DU,V,A,JTYPE,TIME,DTIME,
      2     KSTEP,KINC,JELEM,PARAMS,NDLOAD,JDLTYP,ADLMAG,PREDEF,NPREDF,
      3     LFLAGS,MLVARX,DDLMAG,MDLOAD,PNEWDT,JPROPS,NJPROP,PERIOD)
@@ -157,6 +157,7 @@
       D(5,5) = d44
       D(6,6) = d44
 
+
       ENERGY(1:8) = 0.d0
 
     !     --  Loop over integration points
@@ -239,7 +240,7 @@
 
       return
 
-      END SUBROUTINE UEL_3D
+      END SUBROUTINE UEL
 
 
       subroutine abq_UEL_3D_integrationpoints(n_points, n_nodes, xi, w)
