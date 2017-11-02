@@ -94,7 +94,7 @@
     !
     !
     ! Local Variables
-      integer      :: i,j,n_points,kint, nfacenodes, ipoin
+      integer      :: i,j,k,l,n_points,kint, nfacenodes, ipoin
       integer      :: face_node_list(8)                       ! List of nodes on an element face
     !
       double precision  ::  xi(3,64)                          ! Volumetric Integration points
@@ -113,11 +113,18 @@
       double precision  ::  dxdxi2(3,2)                       ! Derivative of spatial coord wrt normalized areal coord
     !
       double precision  ::  strain(6)                         ! Strain vector contains [e11, e22, e33, 2e12, 2e13, 2e23]
-      double precision  ::  stress(6)                         ! Stress vector contains [s11, s22, s33, s12, s13, s23]
-      double precision  ::  D(6,6)                            ! stress = D*(strain)  (NOTE FACTOR OF 2 in shear strain)
+      double precision  ::  stress(6),stressMat(3,3)          ! Stress vector contains [s11, s22, s33, s12, s13, s23]
+      double precision  ::  PKstress(6)                       ! PK stress in HW 7
+      double precision  ::  D(6,6)                            ! d stress = D*(d strain)  (ATTENTION: NOTE FACTOR OF 2 in shear strain)
       double precision  ::  B(6,60)                           ! strain = B*(dof_total)
+      double precision  ::  Bstar(9,60)                       ! B* in HW7
+      double precision  ::  F(3,3),Finv(3,3),Fdet             ! F in HW7
+      double precision  ::  q(9,1),H(6,9),Kgeo(20,20),Y(60,60)  ! q,H,[Kab],Y in HW7
+      double precision  ::  PKStressMat(3,3)                  ! stress matrix
       double precision  ::  dxidx(3,3), determinant           ! Jacobian inverse and determinant
       double precision  ::  E, xnu, D44, D11, D12             ! Material properties
+      double precision  ::  mu,KK,G11,G22,G33,G44,G(6,6)      ! Material properties in HW7
+      double precision  ::  HB(6,60)
 
     !
     !     Example ABAQUS UEL implementing 3D linear elastic elements
@@ -144,18 +151,12 @@
       AMATRX(1:NDOFEL,1:NDOFEL) = 0.d0
 
       D = 0.d0
-      E = PROPS(1)
-      xnu = PROPS(2)
-      d44 = 0.5D0*E/(1+xnu)
-      d11 = (1.D0-xnu)*E/( (1+xnu)*(1-2.D0*xnu) )
-      d12 = xnu*E/( (1+xnu)*(1-2.D0*xnu) )
-      D(1:3,1:3) = d12
-      D(1,1) = d11
-      D(2,2) = d11
-      D(3,3) = d11
-      D(4,4) = d44
-      D(5,5) = d44
-      D(6,6) = d44
+      mu=PROPS(1)
+      KK=PROPS(2)
+      G11=PROPS(3)
+      G22=PROPS(4)
+      G33=PROPS(5)
+      G44=PROPS(6)
 
 
       ENERGY(1:8) = 0.d0
@@ -166,30 +167,145 @@
         dxdxi = matmul(coords(1:3,1:NNODE),dNdxi(1:NNODE,1:3))
         call abq_UEL_invert3d(dxdxi,dxidx,determinant)
         dNdx(1:NNODE,1:3) = matmul(dNdxi(1:NNODE,1:3),dxidx)
-        B = 0.d0
-        B(1,1:3*NNODE-2:3) = dNdx(1:NNODE,1)
-        B(2,2:3*NNODE-1:3) = dNdx(1:NNODE,2)
-        B(3,3:3*NNODE:3)   = dNdx(1:NNODE,3)
-        B(4,1:3*NNODE-2:3) = dNdx(1:NNODE,2)
-        B(4,2:3*NNODE-1:3) = dNdx(1:NNODE,1)
-        B(5,1:3*NNODE-2:3) = dNdx(1:NNODE,3)
-        B(5,3:3*NNODE:3)   = dNdx(1:NNODE,1)
-        B(6,2:3*NNODE-1:3) = dNdx(1:NNODE,3)
-        B(6,3:3*NNODE:3)   = dNdx(1:NNODE,2)
 
-        strain = matmul(B(1:6,1:3*NNODE),U(1:3*NNODE))
 
-        stress = matmul(D,strain)
-        RHS(1:3*NNODE,1) = RHS(1:3*NNODE,1)
-     1   - matmul(transpose(B(1:6,1:3*NNODE)),stress(1:6))*
-     2                                          w(kint)*determinant
+        !Step 1/10 B* matrix
+        Bstar = 0.d0
+        do i=1,NNODE
+            Bstar(1,(i-1)*3+1)=dNdx(i,1)
+            Bstar(2,(i-1)*3+2)=dNdx(i,2)
+            Bstar(3,(i-1)*3+3)=dNdx(i,3)
+            Bstar(4,(i-1)*3+1)=dNdx(i,2)
+            Bstar(5,(i-1)*3+2)=dNdx(i,1)
+            Bstar(6,(i-1)*3+1)=dNdx(i,3)
+            Bstar(7,(i-1)*3+3)=dNdx(i,1)
+            Bstar(8,(i-1)*3+2)=dNdx(i,3)
+            Bstar(9,(i-1)*3+3)=dNdx(i,2)
+        end do
 
+        !Step 2/10 F=F(dNdx,U)
+        F=0.d0
+        do i=1,3
+            do j=1,3
+                if (i==j) then
+                    F(i,j)=1
+                end if
+                do k=1,NNODE
+                    F(i,j)=F(i,j)+dNdx(k,j)*U(3*(k-1)+i)
+                end do
+            end do
+        end do
+
+        !Step 3/10 J=J(F)
+        call abq_UEL_invert3d(F,Finv,Fdet)
+
+        !Step 4/10 subroutine get_tangent_matrix(F,PROPS;Sigma,D)
+        call get_tangent_matrix(F,mu,KK,G11,G22,G33,G44,D,PKstress)
+        PKStressMat=0.d0
+        PKStressMat(1,1)=PKstress(1)
+        PKStressMat(1,2)=PKstress(4)
+        PKStressMat(1,3)=PKstress(5)
+        PKStressMat(2,1)=PKstress(4)
+        PKStressMat(2,2)=PKstress(2)
+        PKStressMat(2,3)=PKstress(6)
+        PKStressMat(3,1)=PKstress(5)
+        PKStressMat(3,2)=PKstress(6)
+        PKStressMat(3,3)=PKstress(3)
+
+        !Step 5/10 q=q(Sigma,F) be careful about the order!
+        q=0.d0
+        do i=1,3
+            q(1,1)=q(1,1)+PKStressMat(1,i)*F(1,i)
+            q(2,1)=q(2,1)+PKStressMat(2,i)*F(2,i)
+            q(3,1)=q(3,1)+PKStressMat(3,i)*F(3,i)
+            q(4,1)=q(4,1)+PKStressMat(2,i)*F(1,i)
+            q(5,1)=q(5,1)+PKStressMat(1,i)*F(2,i)
+            q(6,1)=q(6,1)+PKStressMat(3,i)*F(1,i)
+            q(7,1)=q(7,1)+PKStressMat(1,i)*F(3,i)
+            q(8,1)=q(8,1)+PKStressMat(3,i)*F(2,i)
+            q(9,1)=q(9,1)+PKStressMat(2,i)*F(3,i)
+        end do
+
+        !Step 6/10 H=H(F)
+        H=0.d0
+        H(1,1)=F(1,1)
+        H(2,2)=F(2,2)
+        H(3,3)=F(3,3)
+
+        H(2,4)=F(1,2)
+        H(1,5)=F(2,1)
+        H(3,6)=F(1,3)
+
+        H(1,7)=F(3,1)
+        H(3,8)=F(2,3)
+        H(2,9)=F(3,2)
+
+        H(4,1)=F(1,2)
+        H(4,2)=F(2,1)
+        H(5,1)=F(1,3)
+        H(5,3)=F(3,1)
+        H(6,2)=F(2,3)
+        H(6,3)=F(3,2)
+
+        H(4,4)=F(1,1)
+        H(4,5)=F(2,2)
+        H(5,5)=F(2,3)
+        H(5,6)=F(1,1)
+        H(6,4)=F(1,3)
+        H(6,6)=F(1,2)
+
+        H(4,7)=F(3,2)
+        H(4,9)=F(3,1)
+        H(5,7)=F(3,3)
+        H(5,8)=F(2,1)
+        H(6,8)=F(2,2)
+        H(6,9)=F(3,3)
+
+        !Step 7/10 Y=Y(dNdx,Sigma)
+        KGeo=0.d0
+        Y=0.d0
+        do i=1,NNODE
+            do j=1,NNODE
+                do k=1,3
+                    do l=1,3
+                        KGeo(i,j)=KGeo(i,j)+
+     1                  dNdx(i,k)*PKStressMat(k,l)*dNdx(j,l)
+                    end do
+                end do
+            end do
+        end do
+        do i=1,NNODE
+            do j=1,NNODE
+                Y(3*(i-1)+1,3*(j-1)+1)=KGeo(i,j)
+                Y(3*(i-1)+2,3*(j-1)+2)=KGeo(i,j)
+                Y(3*(i-1)+3,3*(j-1)+3)=KGeo(i,j)
+            end do
+        end do
+
+        !Step 8/10 R=int(transpose(B*)*q*dV0)
+        RHS(1:3*NNODE,1)=RHS(1:3*NNODE,1)-matmul(transpose(Bstar
+     1   (1:9,1:3*NNODE)),q(1:9,1))*w(kint)*determinant
+
+        !Step 9/10 K=int(transpose(B*)*transpose(H)*D*H*(B*)dV0)+int(YdV0)
+        HB(1:6,1:3*NNODE)=matmul(H(1:6,1:9),Bstar(1:9,1:3*NNODE))
         AMATRX(1:3*NNODE,1:3*NNODE) = AMATRX(1:3*NNODE,1:3*NNODE)
-     1  + matmul(transpose(B(1:6,1:3*NNODE)),matmul(D,B(1:6,1:3*NNODE)))
-     2                                             *w(kint)*determinant
+     1 +matmul(transpose(HB(1:6,1:3*NNODE)),matmul(D,HB(1:6,1:3*NNODE)))
+     2 *w(kint)*determinant+Y(1:3*NNODE,1:3*NNODE)*w(kint)*determinant
 
-        ENERGY(2) = ENERGY(2)
-     1   + 0.5D0*dot_product(stress,strain)*w(kint)*determinant           ! Store the elastic strain energy
+
+        !Step 10/10 Store Cauchy stress: sigma=F*Sigma*FT/J
+        stressMat=matmul(F,matmul(PKStressMat,transpose(F)))/Fdet
+        stress(1)=stressMat(1,1)
+        stress(2)=stressMat(2,2)
+        stress(3)=stressMat(3,3)
+        stress(4)=stressMat(1,2)
+        stress(5)=stressMat(1,3)
+        stress(6)=stressMat(2,3)
+
+        !strain = matmul(B(1:6,1:3*NNODE),U(1:3*NNODE))
+
+        !ENERGY(2) = ENERGY(2)
+     1  ! + 0.5D0*dot_product(stress,strain)*w(kint)*determinant           ! Store the elastic strain energy
 
         if (NSVARS>=n_points*6) then   ! Store stress at each integration point (if space was allocated to do so)
             SVARS(6*kint-5:6*kint) = stress(1:6)
@@ -205,38 +321,7 @@
     !   n specifies the face number, following the ABAQUS convention
     !
     !
-      do j = 1,NDLOAD
 
-        call abq_facenodes_3D(NNODE,iabs(JDLTYP(j,1)),
-     1                                     face_node_list,nfacenodes)
-
-        do i = 1,nfacenodes
-            face_coords(1:3,i) = coords(1:3,face_node_list(i))
-        end do
-
-        if (nfacenodes == 3) n_points = 3           ! Excuse me???
-        if (nfacenodes == 6) n_points = 4
-        if (nfacenodes == 4) n_points = 4
-        if (nfacenodes == 8) n_points = 9
-
-        call abq_UEL_2D_integrationpoints(n_points, nfacenodes, xi2, w)
-
-        do kint = 1,n_points
-            call abq_UEL_2D_shapefunctions(xi2(1:2,kint),
-     1                        nfacenodes,N2,dNdxi2)
-            dxdxi2 = matmul(face_coords(1:3,1:nfacenodes),
-     1                           dNdxi2(1:nfacenodes,1:2))
-            norm(1)=(dxdxi2(2,1)*dxdxi2(3,2))-(dxdxi2(2,2)*dxdxi2(3,1))
-            norm(2)=(dxdxi2(1,1)*dxdxi2(3,2))-(dxdxi2(1,2)*dxdxi2(3,1))
-            norm(3)=(dxdxi2(1,1)*dxdxi2(2,2))-(dxdxi2(1,2)*dxdxi2(2,1))
-
-            do i = 1,nfacenodes
-                ipoin = 3*face_node_list(i)-2
-                RHS(ipoin:ipoin+2,1) = RHS(ipoin:ipoin+2,1)
-     1                 - N2(1:nfacenodes)*adlmag(j,1)*norm(1:3)*w(kint)      ! Note determinant is already in normal
-            end do
-        end do
-      end do
 
       return
 
@@ -670,4 +755,126 @@
 
       end subroutine abq_facenodes_3D
 
+      subroutine get_tangent_matrix(F,mu,KK,G11,G22,G33,G44,D,PKStress)
+
+      double precision, intent(in) :: F(3,3)
+      double precision, intent(in) :: mu,KK,G11,G22,G33,G44                  !PROPS
+      double precision, intent(out) :: PKStress(6,1)
+      double precision, intent(out) :: D(6,6)
+      double precision  ::  G(6,6),Finv(3,3)
+      double precision  ::  C(6,1),Cbar(6,1),Cinv(6,1),Cstar(6,1)
+      double precision  ::  C2D(3,3),Cbar2D(3,3),Cinv2D(3,3)
+      double precision  ::  Cinvstar(6,1)
+      double precision  ::  Cstarbar(6,1),Cstar2D(3,3),Cstarbar2D(3,3)
+      double precision  ::  Omega(6,6),OmegaDiag(6,6),Jac,CJac
+      double precision  ::  P(6,1),Q(1,1),P1(6,1),P2(1,1)
+      double precision  ::  Iden(6,1)
+      double precision  ::  A1(6,6),A2(6,6),A3(6,6),A4(6,6)
+      double precision  ::  A5(6,6),A6(6,6),A7(6,6),A8(6,6)
+      double precision  ::  B21(6,6),B22(6,6),B31,B32(1,1),B33(6,6)
+      double precision  ::  B41(1,1),B42(6,6)
+      double precision  ::  D1(6,6),D2(6,6),D3(6,6)
+      integer  ::  i,j,k,l,dij,dkl
+
+      !Step 1/5: Compute C, Cbar, Cinv, Cstar, Cstarbar,Cinvstar,G
+      C2D=matmul(transpose(F),F)
+      call abq_UEL_invert3d(C2D,Cinv2D,CJac)
+      call abq_UEL_invert3d(F,Finv,Jac)
+      C(1,1)=C2D(1,1)
+      C(2,1)=C2D(2,2)
+      C(3,1)=C2D(3,3)
+      C(4,1)=C2D(1,2)
+      C(5,1)=C2D(1,3)
+      C(6,1)=C2D(2,3)
+      Cinv(1,1)=Cinv2D(1,1)
+      Cinv(2,1)=Cinv2D(2,2)
+      Cinv(3,1)=Cinv2D(3,3)
+      Cinv(4,1)=Cinv2D(1,2)
+      Cinv(5,1)=Cinv2D(1,3)
+      Cinv(6,1)=Cinv2D(2,3)
+      Cbar=C/(Jac**(2.0/3))
+      Cstar=C
+      Cstar(4,1)=Cstar(4,1)*2
+      Cstar(5,1)=Cstar(5,1)*2
+      Cstar(6,1)=Cstar(6,1)*2
+      Cinvstar=Cinv
+      Cinvstar(4,1)=Cinvstar(4,1)*2
+      Cinvstar(5,1)=Cinvstar(5,1)*2
+      Cinvstar(6,1)=Cinvstar(6,1)*2
+      Cstarbar=Cstar/(Jac**(2.0/3))
+      G=0.d0
+      G(1,1)=G11
+      G(2,2)=G22
+      G(3,3)=G33
+      G(4,4)=G44
+      G(5,5)=G44
+      G(6,6)=G44
+
+      !Step 2/5: Compute Q
+      Iden=0.d0
+      Iden(1,1)=1.0
+      Iden(2,1)=1.0
+      Iden(3,1)=1.0
+      Q=0.d0
+      Q=0.25*matmul(transpose(Cstarbar-Iden),matmul(G,Cstarbar-Iden))
+
+      !Step 3/5: Compute P, Sigma
+      P1=matmul(G,Cstarbar-Iden)
+      P2=matmul(transpose(Cbar),matmul(G,Cstarbar-Iden))
+      P=(P1-P2(1,1)/3*Cinv)/(2*Jac**(2.0/3))
+      PKStress=0.d0
+      PKStress=mu*exp(Q(1,1))*P+KK*Jac*(Jac-1)*Cinv
+
+      !Step 4/5: Compute Omega
+      OmegaDiag=0.d0
+      OmegaDiag(1,1)=Cinv(1,1)*Cinv(1,1)
+      OmegaDiag(2,2)=Cinv(2,1)*Cinv(2,1)
+      OmegaDiag(3,3)=Cinv(3,1)*Cinv(3,1)
+      OmegaDiag(4,4)=(Cinv(1,1)*Cinv(2,1)+Cinv(4,1)*Cinv(4,1))/2
+      OmegaDiag(5,5)=(Cinv(1,1)*Cinv(3,1)+Cinv(5,1)*Cinv(5,1))/2
+      OmegaDiag(6,6)=(Cinv(2,1)*Cinv(3,1)+Cinv(6,1)*Cinv(6,1))/2
+      Omega=0.d0
+      Omega(1,2)=Cinv(4,1)*Cinv(4,1)
+      Omega(1,3)=Cinv(5,1)*Cinv(5,1)
+      Omega(2,3)=Cinv(6,1)*Cinv(6,1)
+      Omega(1,4)=Cinv(1,1)*Cinv(4,1)
+      Omega(1,5)=Cinv(1,1)*Cinv(5,1)
+      Omega(1,6)=Cinv(4,1)*Cinv(5,1)
+      Omega(2,4)=Cinv(4,1)*Cinv(2,1)
+      Omega(2,5)=Cinv(4,1)*Cinv(6,1)
+      Omega(2,6)=Cinv(2,1)*Cinv(6,1)
+      Omega(3,4)=Cinv(5,1)*Cinv(6,1)
+      Omega(3,5)=Cinv(5,1)*Cinv(3,1)
+      Omega(3,6)=Cinv(6,1)*Cinv(3,1)
+      Omega(4,5)=(Cinv(1,1)*Cinv(6,1)+Cinv(5,1)*Cinv(4,1))/2
+      Omega(4,6)=(Cinv(4,1)*Cinv(6,1)+Cinv(5,1)*Cinv(2,1))/2
+      Omega(5,6)=(Cinv(4,1)*Cinv(3,1)+Cinv(5,1)*Cinv(6,1))/2
+      Omega=Omega+transpose(Omega)+OmegaDiag
+
+      !Step 5/5: Compute D
+      A1=G
+        B21=matmul(matmul(G,Cstar),transpose(Cinv))
+        B22=matmul(Cinv,transpose(matmul(G,Cstar)))
+      A2=-(B21+B22)/3
+        B31=(Jac**(2.0/3))/3
+        B32=matmul(transpose(Cstar),matmul(G,(Cstarbar-Iden)))
+        B33=Omega
+      A3=-B31*B32(1,1)*B33
+        B41=matmul(transpose(Cstar),matmul(G,Cstar))
+        B42=matmul(Cinv,transpose(Cinv))
+      A4=B41(1,1)*B42/9
+      D1=mu*exp(Q(1,1))/(Jac**(4.0/3))*(A1+A2+A3+A4)
+
+      A5=2*matmul(P,transpose(P-Cinv/3))
+      A6=-matmul(Cinv,transpose(matmul(G,Cstarbar-Iden)))/
+     1   (3*Jac**(2.0/3))
+      D2=mu*exp(Q(1,1))*(A5+A6)
+
+      A7=(2*Jac-1)*matmul(Cinv,transpose(Cinv))
+      A8=2*(Jac-1)*Omega
+      D3=KK*Jac*(A7+A8)
+
+      D=D1+D2+D3
+
+      end subroutine get_tangent_matrix
 
