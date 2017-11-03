@@ -139,7 +139,7 @@
 
           INITIAL TIME STEP, 1.d0        % Test of a comment here
           MAX TIME STEP, 1.d0
-          MIN TIME STEP, 0.001d0
+          MIN TIME STEP, 0.00001d0
           MAX NUMBER OF STEPS, 20
           STOP TIME, 40.d0
           STATE PRINT STEP INTERVAL, 1

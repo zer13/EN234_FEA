@@ -17,9 +17,9 @@
      1     PROPS,NPROPS,COORDS,MCRD,NNODE,U,DU,V,A,JTYPE,TIME,DTIME,
      2     KSTEP,KINC,JELEM,PARAMS,NDLOAD,JDLTYP,ADLMAG,PREDEF,NPREDF,
      3     LFLAGS,MLVARX,DDLMAG,MDLOAD,PNEWDT,JPROPS,NJPROP,PERIOD)
-    !
+
       INCLUDE 'ABA_PARAM.INC'
-    !
+
     !
       DIMENSION RHS(MLVARX,*),AMATRX(NDOFEL,NDOFEL),PROPS(*),
      1   SVARS(*),ENERGY(8),COORDS(MCRD,NNODE),U(NDOFEL),
@@ -114,7 +114,7 @@
     !
       double precision  ::  strain(6)                         ! Strain vector contains [e11, e22, e33, 2e12, 2e13, 2e23]
       double precision  ::  stress(6),stressMat(3,3)          ! Stress vector contains [s11, s22, s33, s12, s13, s23]
-      double precision  ::  PKstress(6)                       ! PK stress in HW 7
+      double precision  ::  PKstress(6,1)                       ! PK stress in HW 7
       double precision  ::  D(6,6)                            ! d stress = D*(d strain)  (ATTENTION: NOTE FACTOR OF 2 in shear strain)
       double precision  ::  B(6,60)                           ! strain = B*(dof_total)
       double precision  ::  Bstar(9,60)                       ! B* in HW7
@@ -188,7 +188,7 @@
         do i=1,3
             do j=1,3
                 if (i==j) then
-                    F(i,j)=1
+                    F(i,j)=1.0
                 end if
                 do k=1,NNODE
                     F(i,j)=F(i,j)+dNdx(k,j)*U(3*(k-1)+i)
@@ -202,15 +202,15 @@
         !Step 4/10 subroutine get_tangent_matrix(F,PROPS;Sigma,D)
         call get_tangent_matrix(F,mu,KK,G11,G22,G33,G44,D,PKstress)
         PKStressMat=0.d0
-        PKStressMat(1,1)=PKstress(1)
-        PKStressMat(1,2)=PKstress(4)
-        PKStressMat(1,3)=PKstress(5)
-        PKStressMat(2,1)=PKstress(4)
-        PKStressMat(2,2)=PKstress(2)
-        PKStressMat(2,3)=PKstress(6)
-        PKStressMat(3,1)=PKstress(5)
-        PKStressMat(3,2)=PKstress(6)
-        PKStressMat(3,3)=PKstress(3)
+        PKStressMat(1,1)=PKstress(1,1)
+        PKStressMat(1,2)=PKstress(4,1)
+        PKStressMat(1,3)=PKstress(5,1)
+        PKStressMat(2,1)=PKstress(4,1)
+        PKStressMat(2,2)=PKstress(2,1)
+        PKStressMat(2,3)=PKstress(6,1)
+        PKStressMat(3,1)=PKstress(5,1)
+        PKStressMat(3,2)=PKstress(6,1)
+        PKStressMat(3,3)=PKstress(3,1)
 
         !Step 5/10 q=q(Sigma,F) be careful about the order!
         q=0.d0
@@ -281,7 +281,6 @@
                 Y(3*(i-1)+3,3*(j-1)+3)=KGeo(i,j)
             end do
         end do
-
         !Step 8/10 R=int(transpose(B*)*q*dV0)
         RHS(1:3*NNODE,1)=RHS(1:3*NNODE,1)-matmul(transpose(Bstar
      1   (1:9,1:3*NNODE)),q(1:9,1))*w(kint)*determinant
@@ -759,14 +758,15 @@
 
       double precision, intent(in) :: F(3,3)
       double precision, intent(in) :: mu,KK,G11,G22,G33,G44                  !PROPS
-      double precision, intent(out) :: PKStress(6,1)
       double precision, intent(out) :: D(6,6)
+      double precision, intent(out) :: PKStress(6,1)
       double precision  ::  G(6,6),Finv(3,3)
       double precision  ::  C(6,1),Cbar(6,1),Cinv(6,1),Cstar(6,1)
       double precision  ::  C2D(3,3),Cbar2D(3,3),Cinv2D(3,3)
       double precision  ::  Cinvstar(6,1)
       double precision  ::  Cstarbar(6,1),Cstar2D(3,3),Cstarbar2D(3,3)
-      double precision  ::  Omega(6,6),OmegaDiag(6,6),Jac,CJac
+      double precision  ::  Omega(6,6),OmegaDiag(6,6),Omega0(6,6)
+      double precision  ::  Jac,CJac
       double precision  ::  P(6,1),Q(1,1),P1(6,1),P2(1,1)
       double precision  ::  Iden(6,1)
       double precision  ::  A1(6,6),A2(6,6),A3(6,6),A4(6,6)
@@ -820,8 +820,8 @@
 
       !Step 3/5: Compute P, Sigma
       P1=matmul(G,Cstarbar-Iden)
-      P2=matmul(transpose(Cbar),matmul(G,Cstarbar-Iden))
-      P=(P1-P2(1,1)/3*Cinv)/(2*Jac**(2.0/3))
+      P2=matmul(transpose(Cstar),matmul(G,Cstarbar-Iden))
+      P=(P1-(P2(1,1)/3)*Cinv)/(2*Jac**(2.0/3))
       PKStress=0.d0
       PKStress=mu*exp(Q(1,1))*P+KK*Jac*(Jac-1)*Cinv
 
@@ -833,39 +833,39 @@
       OmegaDiag(4,4)=(Cinv(1,1)*Cinv(2,1)+Cinv(4,1)*Cinv(4,1))/2
       OmegaDiag(5,5)=(Cinv(1,1)*Cinv(3,1)+Cinv(5,1)*Cinv(5,1))/2
       OmegaDiag(6,6)=(Cinv(2,1)*Cinv(3,1)+Cinv(6,1)*Cinv(6,1))/2
-      Omega=0.d0
-      Omega(1,2)=Cinv(4,1)*Cinv(4,1)
-      Omega(1,3)=Cinv(5,1)*Cinv(5,1)
-      Omega(2,3)=Cinv(6,1)*Cinv(6,1)
-      Omega(1,4)=Cinv(1,1)*Cinv(4,1)
-      Omega(1,5)=Cinv(1,1)*Cinv(5,1)
-      Omega(1,6)=Cinv(4,1)*Cinv(5,1)
-      Omega(2,4)=Cinv(4,1)*Cinv(2,1)
-      Omega(2,5)=Cinv(4,1)*Cinv(6,1)
-      Omega(2,6)=Cinv(2,1)*Cinv(6,1)
-      Omega(3,4)=Cinv(5,1)*Cinv(6,1)
-      Omega(3,5)=Cinv(5,1)*Cinv(3,1)
-      Omega(3,6)=Cinv(6,1)*Cinv(3,1)
-      Omega(4,5)=(Cinv(1,1)*Cinv(6,1)+Cinv(5,1)*Cinv(4,1))/2
-      Omega(4,6)=(Cinv(4,1)*Cinv(6,1)+Cinv(5,1)*Cinv(2,1))/2
-      Omega(5,6)=(Cinv(4,1)*Cinv(3,1)+Cinv(5,1)*Cinv(6,1))/2
-      Omega=Omega+transpose(Omega)+OmegaDiag
+      Omega0=0.d0
+      Omega0(1,2)=Cinv(4,1)*Cinv(4,1)
+      Omega0(1,3)=Cinv(5,1)*Cinv(5,1)
+      Omega0(2,3)=Cinv(6,1)*Cinv(6,1)
+      Omega0(1,4)=Cinv(1,1)*Cinv(4,1)
+      Omega0(1,5)=Cinv(1,1)*Cinv(5,1)
+      Omega0(1,6)=Cinv(4,1)*Cinv(5,1)
+      Omega0(2,4)=Cinv(4,1)*Cinv(2,1)
+      Omega0(2,5)=Cinv(4,1)*Cinv(6,1)
+      Omega0(2,6)=Cinv(2,1)*Cinv(6,1)
+      Omega0(3,4)=Cinv(5,1)*Cinv(6,1)
+      Omega0(3,5)=Cinv(5,1)*Cinv(3,1)
+      Omega0(3,6)=Cinv(6,1)*Cinv(3,1)
+      Omega0(4,5)=(Cinv(1,1)*Cinv(6,1)+Cinv(5,1)*Cinv(4,1))/2
+      Omega0(4,6)=(Cinv(4,1)*Cinv(6,1)+Cinv(5,1)*Cinv(2,1))/2
+      Omega0(5,6)=(Cinv(4,1)*Cinv(3,1)+Cinv(5,1)*Cinv(6,1))/2
+      Omega=Omega0+transpose(Omega0)+OmegaDiag
 
       !Step 5/5: Compute D
       A1=G
         B21=matmul(matmul(G,Cstar),transpose(Cinv))
         B22=matmul(Cinv,transpose(matmul(G,Cstar)))
       A2=-(B21+B22)/3
-        B31=(Jac**(2.0/3))/3
+        B31=(Jac**(2.0/3))/3.0
         B32=matmul(transpose(Cstar),matmul(G,(Cstarbar-Iden)))
         B33=Omega
       A3=-B31*B32(1,1)*B33
         B41=matmul(transpose(Cstar),matmul(G,Cstar))
         B42=matmul(Cinv,transpose(Cinv))
       A4=B41(1,1)*B42/9
-      D1=mu*exp(Q(1,1))/(Jac**(4.0/3))*(A1+A2+A3+A4)
+      D1=mu*exp(Q(1,1))/(Jac**(4.0/3.0))*(A1+A2+A3+A4)
 
-      A5=2*matmul(P,transpose(P-Cinv/3))
+      A5=2*matmul(P,transpose(P-Cinv/3.0))
       A6=-matmul(Cinv,transpose(matmul(G,Cstarbar-Iden)))/
      1   (3*Jac**(2.0/3))
       D2=mu*exp(Q(1,1))*(A5+A6)
