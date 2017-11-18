@@ -33,13 +33,12 @@
       END NODES
 %
 %     The MATERIAL command creates a new material.  The material properties can be assigned to ABAQUS style continuum elements to test an ABAQUS UMAT or VUMAT
-      MATERIAL, mccormick_vumat
-        STATE VARIABLES, 3          % Number of material state variables (if the key is omitted the number of state vars defaults to zero)
+      MATERIAL, visplas_vumat
+        STATE VARIABLES, 2          % Number of material state variables (if the key is omitted the number of state vars defaults to zero)
         PROPERTIES
-         70.d03, 0.3d0              % E (MPa), nu; 
-         70.d0, 0.001d0, 0.3d0      % Y (MPa), e0, m
-         1.d-08, 2.23d0, 27.9d0     % edot0 (s^-1), S (MPa), H (MPa)
-         0.02d0, 1.6d-05, 0.336d0    % td (s), Omega, alpha
+         70.d03, 0.3d0           % E (MPa), nu; 
+         70.d0, 0.1d0, 5.d0      % Y (MPa), e0, n
+         0.01d0, 10.d0             % edot0, m
         END PROPERTIES
       END MATERIAL
 %
@@ -48,11 +47,8 @@
 %       The TYPE key selects an ABAQUS format continuum element
 %       The following elements are supported: C3D4, C3D8, C3D10, C3D20
         TYPE, C3D8
-        PROPERTIES, mccormick_vumat
-        DENSITY, 0.005d0           % We are using mass scaling here the physical density is 2.7*10^-9 in SI units
-        INITIAL STATE VARIABLES
-             0.d0, 10.0d0, 0.d0         % The state vars are accumulated plastic strain, ta, increment in plastic strain
-        END INITIAL STATE VARIABLES
+        PROPERTIES, visplas_vumat
+        DENSITY, 0.00005d0           % We are using mass scaling here the physical density is 2.7*10^-9 in SI units
 
 %     Define element connectivity
 %     The element number (first number in the list) is optional, and is ignored in the code
@@ -73,10 +69,9 @@
 %       The HISTORY key defines a time history that can be applied to DOFs or distributed loads
 
         HISTORY, strainrate_history
-          0.d0, 0.02d0
-          0.5d0, 0.02d0
-          0.50000001d0,0.004d0
-          10.d0, 0.004d0
+          0.d0, 10.0d0
+          0.5d0, 10.0d0
+           10.d0, 10.0d0
         END HISTORY
 
 %       The NODESET key defines a list of nodes
@@ -115,7 +110,7 @@
 %        The parameters are time step, no. steps, no. steps between state prints, no. steps between user prints
 %        All parameters are required
 
-          TIME STEP, 0.00005
+          TIME STEP, 0.000001
           NUMBER OF STEPS, 20000
           STATE PRINT STEPS, 500
           USER PRINT STEPS, 50
@@ -133,7 +128,7 @@
          END PRINT STATE
 
          USER PRINT FILES
-              Output_files\McCormick_stressvstrain.dat
+              Output_files\visplas_stressvstrain.dat
          END USER PRINT FILES
          USER PRINT PARAMETERS
                 9 % Specify the HW problem number
